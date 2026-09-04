@@ -41,6 +41,8 @@ jobs:
 
       - name: Configure Android SDK & NDK in buildozer.spec
         run: |
+          sudo mkdir -p $ANDROID_HOME/tools/bin
+          sudo ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager || true
           sed -i "/^\[app\]/a android.sdk_path = $ANDROID_HOME" buildozer.spec
           NDK_DIR=$(ls -d $ANDROID_HOME/ndk/25* 2>/dev/null | head -n 1)
           if [ -n "$NDK_DIR" ]; then
