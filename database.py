@@ -6,20 +6,72 @@ Handles transactions, category headers, running balances, and monthly summaries.
 import sqlite3
 from datetime import datetime
 import os
+import json
 
-def get_default_db_path():
-    """Determine database path dynamically, supporting Android user_data_dir."""
+def get_config_path():
+    """Get path to the books config file."""
     try:
         from kivy.utils import platform
         if platform == 'android':
             from kivy.app import App
             app = App.get_running_app()
             if app and hasattr(app, 'user_data_dir') and app.user_data_dir:
-                return os.path.join(app.user_data_dir, "cashbook.db")
+                return os.path.join(app.user_data_dir, "config.json")
     except Exception:
         pass
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "cashbook.db")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
+def load_config():
+    cpath = get_config_path()
+    if os.path.exists(cpath):
+        try:
+            with open(cpath, 'r') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"books": ["cashbook"], "active_book": "cashbook"}
+
+def save_config(config):
+    with open(get_config_path(), 'w') as f:
+        json.dump(config, f)
+
+def get_all_books():
+    return load_config().get("books", ["cashbook"])
+
+def get_active_book():
+    return load_config().get("active_book", "cashbook")
+
+def create_book(book_name):
+    config = load_config()
+    books = config.get("books", [])
+    if book_name not in books:
+        books.append(book_name)
+    config["books"] = books
+    save_config(config)
+    # Also initialize its DB schema immediately
+    set_active_book(book_name)
+    init_db()
+
+def set_active_book(book_name):
+    config = load_config()
+    if book_name in config.get("books", []):
+        config["active_book"] = book_name
+        save_config(config)
+
+def get_default_db_path():
+    """Determine database path dynamically based on active book."""
+    active = get_active_book()
+    filename = f"{active}.db"
+    try:
+        from kivy.utils import platform
+        if platform == 'android':
+            from kivy.app import App
+            app = App.get_running_app()
+            if app and hasattr(app, 'user_data_dir') and app.user_data_dir:
+                return os.path.join(app.user_data_dir, filename)
+    except Exception:
+        pass
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
 
 DEFAULT_DB_PATH = get_default_db_path()
 
@@ -388,3 +440,193 @@ def get_monthly_ledger_data(year, month, db_path=None):
         "closing_balance": round(current_balance, 2),
         "transactions": monthly_transactions
     }
+
+
+def clear_all_transactions(db_path=None):
+    """
+    Delete all transactions and reset auto-increment ID to start fresh.
+    Preserves all category headers.
+    """
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM transactions")
+    try:
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='transactions'")
+    except sqlite3.OperationalError:
+        pass
+    conn.commit()
+    conn.close()
+    return True
+
+
+def import_transactions_from_excel(file_path, db_path=None):
+    """
+    Import transactions from Excel (.xlsx, .xls) or CSV file.
+    Intelligently maps column aliases (date, category, in/out, amount, payment mode, remarks),
+    automatically creates missing category headers, and persists all records.
+    """
+    import pandas as pd
+    from datetime import datetime
+
+    if not os.path.exists(file_path):
+        return {"success": False, "count": 0, "message": "File not found."}
+
+    try:
+        if file_path.lower().endswith('.csv'):
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+    except Exception as e:
+        return {"success": False, "count": 0, "message": f"Error reading file: {str(e)}"}
+
+    if df.empty:
+        return {"success": False, "count": 0, "message": "The selected file is empty."}
+
+    # Normalize column names for flexible matching
+    cols_map = {}
+    for col in df.columns:
+        norm = str(col).strip().lower().replace(" ", "_").replace("-", "_")
+        cols_map[norm] = col
+
+    def find_col(aliases):
+        for a in aliases:
+            if a in cols_map:
+                return cols_map[a]
+        return None
+
+    date_col = find_col(['date', 'tx_date', 'transaction_date', 'dt', 'txn_date', 'trans_date'])
+    time_col = find_col(['time', 'tx_time', 'transaction_time', 'tm'])
+    cat_col = find_col(['category', 'head', 'header', 'particulars', 'description', 'account', 'item'])
+    type_col = find_col(['type', 'trans_type', 'transaction_type', 'in_out', 'flow', 'direction'])
+    amt_col = find_col(['amount', 'total', 'amt', 'value', 'net_amount'])
+    in_col = find_col(['cash_in', 'in', 'inflow', 'credit', 'cr', 'received', 'receipt', 'deposit', 'income'])
+    out_col = find_col(['cash_out', 'out', 'outflow', 'debit', 'dr', 'paid', 'payment', 'withdrawal', 'expense'])
+    mode_col = find_col(['payment_mode', 'mode', 'payment_type', 'method', 'channel'])
+    remarks_col = find_col(['remarks', 'remark', 'notes', 'narration', 'memo', 'details', 'comment'])
+
+    if not date_col:
+        date_col = df.columns[0]
+
+    imported_count = 0
+    now_time = datetime.now().strftime("%H:%M:%S")
+
+    conn = get_connection(db_path)
+    cursor = conn.cursor()
+
+    # Pre-fetch categories
+    cursor.execute("SELECT name FROM categories")
+    existing_cats = {row[0].strip().lower(): row[0] for row in cursor.fetchall()}
+
+    for _, row in df.iterrows():
+        # 1. Parse Date
+        raw_date = row.get(date_col)
+        if pd.isna(raw_date):
+            continue
+        try:
+            if isinstance(raw_date, datetime) or hasattr(raw_date, 'strftime'):
+                date_str = raw_date.strftime("%Y-%m-%d")
+            else:
+                date_str = pd.to_datetime(str(raw_date)).strftime("%Y-%m-%d")
+        except Exception:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+
+        # 2. Parse Time
+        time_str = now_time
+        if time_col and not pd.isna(row.get(time_col)):
+            raw_time = row.get(time_col)
+            if hasattr(raw_time, 'strftime'):
+                time_str = raw_time.strftime("%H:%M:%S")
+            else:
+                t_val = str(raw_time).strip()
+                time_str = t_val if len(t_val) >= 5 else now_time
+
+        # 3. Determine Amount & Direction (IN / OUT)
+        trans_type = "IN"
+        amount = 0.0
+
+        if in_col and out_col:
+            in_val = pd.to_numeric(row.get(in_col), errors='coerce')
+            out_val = pd.to_numeric(row.get(out_col), errors='coerce')
+            if pd.notna(in_val) and in_val > 0:
+                trans_type = "IN"
+                amount = float(in_val)
+            elif pd.notna(out_val) and out_val > 0:
+                trans_type = "OUT"
+                amount = float(out_val)
+            elif amt_col and pd.notna(row.get(amt_col)):
+                val = pd.to_numeric(row.get(amt_col), errors='coerce')
+                if pd.notna(val) and val != 0:
+                    amount = abs(float(val))
+                    trans_type = "OUT" if float(val) < 0 else "IN"
+        elif amt_col:
+            raw_amt = pd.to_numeric(row.get(amt_col), errors='coerce')
+            if pd.isna(raw_amt) or raw_amt == 0:
+                continue
+            amount = abs(float(raw_amt))
+            if type_col and not pd.isna(row.get(type_col)):
+                t_str = str(row.get(type_col)).strip().upper()
+                trans_type = "OUT" if t_str in ['OUT', 'EXPENSE', 'DEBIT', 'DR', 'PAYMENT', '-', 'WITHDRAWAL'] else "IN"
+            else:
+                trans_type = "OUT" if float(raw_amt) < 0 else "IN"
+        elif in_col:
+            in_val = pd.to_numeric(row.get(in_col), errors='coerce')
+            if pd.notna(in_val) and in_val > 0:
+                trans_type = "IN"
+                amount = float(in_val)
+        elif out_col:
+            out_val = pd.to_numeric(row.get(out_col), errors='coerce')
+            if pd.notna(out_val) and out_val > 0:
+                trans_type = "OUT"
+                amount = float(out_val)
+
+        if amount <= 0:
+            continue
+
+        # 4. Determine Category
+        category_name = "General"
+        if cat_col and not pd.isna(row.get(cat_col)):
+            cand = str(row.get(cat_col)).strip()
+            if cand:
+                category_name = cand
+        elif remarks_col and not pd.isna(row.get(remarks_col)):
+            cand = str(row.get(remarks_col)).strip()
+            if cand and len(cand) <= 30:
+                category_name = cand
+
+        # Auto-create category if missing
+        cat_key = category_name.strip().lower()
+        if cat_key not in existing_cats:
+            cursor.execute(
+                "INSERT INTO categories (name, type, is_default) VALUES (?, ?, 0)",
+                (category_name, trans_type)
+            )
+            existing_cats[cat_key] = category_name
+
+        # 5. Payment Mode
+        payment_mode = "Cash"
+        if mode_col and not pd.isna(row.get(mode_col)):
+            pm = str(row.get(mode_col)).strip()
+            if pm:
+                payment_mode = pm
+
+        # 6. Remarks
+        remarks = ""
+        if remarks_col and not pd.isna(row.get(remarks_col)):
+            remarks = str(row.get(remarks_col)).strip()
+
+        # Insert Transaction
+        cursor.execute("""
+            INSERT INTO transactions (date, time, category, type, amount, payment_mode, remarks)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (date_str, time_str, category_name, trans_type, amount, payment_mode, remarks))
+        imported_count += 1
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "count": imported_count,
+        "message": f"Successfully imported {imported_count} transactions from Excel!"
+    }
+

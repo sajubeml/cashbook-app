@@ -37,9 +37,12 @@ import pdf_generator
 
 class ModernButton(Button):
     bg_color = ListProperty([0.23, 0.51, 0.96, 1])
+    bg_color_down = ListProperty([0.15, 0.35, 0.75, 1])
 
 class OutlineButton(Button):
     border_color = ListProperty([0.28, 0.33, 0.41, 1])
+    bg_color = ListProperty([0.12, 0.16, 0.23, 1])
+    bg_color_down = ListProperty([0.20, 0.25, 0.33, 1])
 
 from kivy.utils import platform
 
@@ -94,6 +97,7 @@ KV_DESIGN = """
         text_size: self.size
 
 <ModernButton>:
+    background_color: (0, 0, 0, 0)
     background_normal: ''
     background_down: ''
     bold: True
@@ -101,13 +105,14 @@ KV_DESIGN = """
     color: (1, 1, 1, 1)
     canvas.before:
         Color:
-            rgba: self.bg_color if self.state == 'normal' else (0.11, 0.31, 0.85, 1)
+            rgba: self.bg_color_down if self.state == 'down' else self.bg_color
         RoundedRectangle:
             pos: self.pos
             size: self.size
             radius: [10, 10, 10, 10]
 
 <OutlineButton>:
+    background_color: (0, 0, 0, 0)
     background_normal: ''
     background_down: ''
     font_size: '12sp'
@@ -115,7 +120,7 @@ KV_DESIGN = """
     color: hex('#E2E8F0')
     canvas.before:
         Color:
-            rgba: hex('#1E293B') if self.state == 'normal' else hex('#334155')
+            rgba: self.bg_color_down if self.state == 'down' else self.bg_color
         RoundedRectangle:
             pos: self.pos
             size: self.size
@@ -166,15 +171,28 @@ KV_DESIGN = """
                     text_size: self.size
 
             OutlineButton:
+                text: 'Settings'
+                size_hint_x: None
+                width: '64dp'
+                on_release: root.open_settings_modal()
+
+            OutlineButton:
                 text: 'Categories'
                 size_hint_x: None
-                width: '84dp'
+                width: '72dp'
                 on_release: app.go_to_categories()
 
             OutlineButton:
-                text: 'Export PDF'
+                text: 'Import'
                 size_hint_x: None
-                width: '84dp'
+                width: '62dp'
+                border_color: hex('#10B981')
+                on_release: root.open_excel_import()
+
+            OutlineButton:
+                text: 'PDF'
+                size_hint_x: None
+                width: '46dp'
                 on_release: root.open_pdf_modal()
 
         # Financial Summary Cards (In, Out, Net)
@@ -273,18 +291,25 @@ KV_DESIGN = """
         BoxLayout:
             size_hint_y: None
             height: '52dp'
-            spacing: 10
+            spacing: 12
+            padding: [0, 4, 0, 0]
 
             ModernButton:
                 text: '+ CASH IN'
                 bg_color: hex('#10B981')
+                bg_color_down: hex('#059669')
                 font_size: '15sp'
+                bold: True
+                color: (1, 1, 1, 1)
                 on_release: root.open_transaction_modal('IN')
 
             ModernButton:
                 text: '- CASH OUT'
                 bg_color: hex('#EF4444')
+                bg_color_down: hex('#DC2626')
                 font_size: '15sp'
+                bold: True
+                color: (1, 1, 1, 1)
                 on_release: root.open_transaction_modal('OUT')
 
 <HeaderScreen>:
@@ -310,23 +335,32 @@ KV_DESIGN = """
             OutlineButton:
                 text: '< Back'
                 size_hint_x: None
-                width: '68dp'
+                width: '58dp'
                 on_release: app.go_to_dashboard()
 
             Label:
-                text: 'Category Headers'
-                font_size: '18sp'
+                text: 'Categories'
+                font_size: '17sp'
                 bold: True
                 color: hex('#F8FAFC')
                 halign: 'left'
                 valign: 'middle'
                 text_size: self.size
 
+            OutlineButton:
+                text: 'Clear Data'
+                size_hint_x: None
+                width: '78dp'
+                border_color: hex('#EF4444')
+                color: hex('#F87171')
+                on_release: root.confirm_clear_data()
+
             ModernButton:
                 text: '+ Add'
                 size_hint_x: None
-                width: '68dp'
+                width: '58dp'
                 bg_color: hex('#3B82F6')
+                bg_color_down: hex('#2563EB')
                 on_release: root.open_add_category_modal()
 
         # Type Toggle Tabs
@@ -774,6 +808,170 @@ class PDFExportModal(ModalView):
 
 
 # ==========================================
+# SETTINGS & MULTIPLE BOOKS MODALS
+# ==========================================
+class SettingsModal(ModalView):
+    """Modal for managing multiple books/ledgers."""
+    def __init__(self, on_switch_callback=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.88, None)
+        self.height = 280
+        self.auto_dismiss = True
+        self.on_switch_callback = on_switch_callback
+
+        container = BoxLayout(orientation='vertical', padding=[16, 16, 16, 16], spacing=12)
+
+        title_lbl = Label(
+            text="Settings / Multiple Books",
+            font_size='16sp',
+            bold=True,
+            color=kivy.utils.get_color_from_hex('#38BDF8'),
+            size_hint_y=None,
+            height=28
+        )
+        container.add_widget(title_lbl)
+
+        # Book Selector
+        books = database.get_all_books()
+        active = database.get_active_book()
+        self.book_spinner = Spinner(
+            text=active,
+            values=books,
+            background_normal='',
+            background_color=kivy.utils.get_color_from_hex('#334155'),
+            color=kivy.utils.get_color_from_hex('#F8FAFC'),
+            size_hint_y=None,
+            height=44,
+            font_size='14sp'
+        )
+        container.add_widget(self.book_spinner)
+
+        # Actions
+        btn_box = BoxLayout(spacing=10, size_hint_y=None, height=44)
+        add_btn = OutlineButton(
+            text='New Book',
+            border_color=kivy.utils.get_color_from_hex('#10B981'),
+            color=kivy.utils.get_color_from_hex('#10B981')
+        )
+        add_btn.bind(on_release=self.open_add_book)
+
+        switch_btn = ModernButton(
+            text='Switch Book',
+            bg_color=kivy.utils.get_color_from_hex('#2563EB')
+        )
+        switch_btn.bind(on_release=self.switch_book)
+
+        btn_box.add_widget(add_btn)
+        btn_box.add_widget(switch_btn)
+        container.add_widget(btn_box)
+
+        # Close
+        close_btn = Button(
+            text='Close',
+            background_normal='',
+            background_color=kivy.utils.get_color_from_hex('#334155'),
+            color=kivy.utils.get_color_from_hex('#E2E8F0'),
+            size_hint_y=None,
+            height=40,
+            font_size='14sp',
+            bold=True
+        )
+        close_btn.bind(on_release=self.dismiss)
+        container.add_widget(close_btn)
+
+        self.add_widget(container)
+
+    def switch_book(self, *args):
+        selected = self.book_spinner.text
+        database.set_active_book(selected)
+        if self.on_switch_callback:
+            self.on_switch_callback()
+        self.dismiss()
+
+    def open_add_book(self, *args):
+        self.dismiss()
+        modal = AddBookModal(on_success_callback=self.on_switch_callback)
+        modal.open()
+
+
+class AddBookModal(ModalView):
+    """Modal for creating a new book."""
+    def __init__(self, on_success_callback=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.88, None)
+        self.height = 230
+        self.auto_dismiss = False
+        self.on_success_callback = on_success_callback
+
+        container = BoxLayout(orientation='vertical', padding=[16, 16, 16, 16], spacing=10)
+
+        title_lbl = Label(
+            text="Create New Book",
+            font_size='16sp',
+            bold=True,
+            color=kivy.utils.get_color_from_hex('#10B981'),
+            size_hint_y=None,
+            height=26
+        )
+        container.add_widget(title_lbl)
+
+        self.name_input = TextInput(
+            hint_text='Book Name (e.g. Business)',
+            multiline=False,
+            background_normal='',
+            background_active='',
+            background_color=kivy.utils.get_color_from_hex('#1E293B'),
+            foreground_color=kivy.utils.get_color_from_hex('#F8FAFC'),
+            font_size='14sp',
+            size_hint_y=None,
+            height=44,
+            padding=[10, 12, 10, 10]
+        )
+        container.add_widget(self.name_input)
+
+        self.err_lbl = Label(text='', color=kivy.utils.get_color_from_hex('#EF4444'), font_size='12sp', size_hint_y=None, height=20)
+        container.add_widget(self.err_lbl)
+
+        btn_box = BoxLayout(spacing=10, size_hint_y=None, height=44)
+        cancel_btn = Button(
+            text='Cancel',
+            background_normal='',
+            background_color=kivy.utils.get_color_from_hex('#334155'),
+            font_size='14sp', bold=True
+        )
+        cancel_btn.bind(on_release=self.dismiss)
+
+        save_btn = Button(
+            text='Create',
+            background_normal='',
+            background_color=kivy.utils.get_color_from_hex('#10B981'),
+            font_size='14sp', bold=True
+        )
+        save_btn.bind(on_release=self.save_book)
+
+        btn_box.add_widget(cancel_btn)
+        btn_box.add_widget(save_btn)
+        container.add_widget(btn_box)
+        self.add_widget(container)
+
+    def save_book(self, *args):
+        name = self.name_input.text.strip()
+        if not name:
+            self.err_lbl.text = "Please enter a book name."
+            return
+        
+        safe_name = "".join([c for c in name if c.isalnum() or c in " _-"])
+        if not safe_name:
+            self.err_lbl.text = "Invalid name."
+            return
+
+        database.create_book(safe_name)
+        if self.on_success_callback:
+            self.on_success_callback()
+        self.dismiss()
+
+
+# ==========================================
 # ADD CATEGORY MODAL VIEW
 # ==========================================
 class AddCategoryModal(ModalView):
@@ -882,6 +1080,97 @@ class AddCategoryModal(ModalView):
             self.err_lbl.text = str(e)
 
 
+class NoticeModal(ModalView):
+    """Clean modern notification alert modal."""
+    def __init__(self, message="", **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.85, None)
+        self.height = 180
+        self.auto_dismiss = True
+        self.background_color = [0, 0, 0, 0.6]
+
+        box = BoxLayout(orientation='vertical', padding=18, spacing=14)
+        with box.canvas.before:
+            kivy.graphics.Color(*kivy.utils.get_color_from_hex('#1E293B'))
+            self.bg_rect = kivy.graphics.RoundedRectangle(pos=box.pos, size=box.size, radius=[14, 14, 14, 14])
+        box.bind(pos=lambda obj, val: setattr(self.bg_rect, 'pos', val))
+        box.bind(size=lambda obj, val: setattr(self.bg_rect, 'size', val))
+
+        lbl = Label(
+            text=message,
+            font_size='14sp',
+            bold=True,
+            color=kivy.utils.get_color_from_hex('#F8FAFC'),
+            halign='center',
+            valign='middle'
+        )
+        lbl.bind(size=lbl.setter('text_size'))
+        box.add_widget(lbl)
+
+        btn = ModernButton(text='OK', size_hint_y=None, height=40, bg_color=kivy.utils.get_color_from_hex('#3B82F6'))
+        btn.bind(on_release=self.dismiss)
+        box.add_widget(btn)
+        self.add_widget(box)
+
+
+class ConfirmModal(ModalView):
+    """Confirmation modal for actions like clearing all data."""
+    def __init__(self, title="Confirmation", message="", on_confirm_callback=None, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.85, None)
+        self.height = 200
+        self.auto_dismiss = False
+        self.background_color = [0, 0, 0, 0.65]
+
+        box = BoxLayout(orientation='vertical', padding=18, spacing=12)
+        with box.canvas.before:
+            kivy.graphics.Color(*kivy.utils.get_color_from_hex('#1E293B'))
+            self.bg_rect = kivy.graphics.RoundedRectangle(pos=box.pos, size=box.size, radius=[14, 14, 14, 14])
+        box.bind(pos=lambda obj, val: setattr(self.bg_rect, 'pos', val))
+        box.bind(size=lambda obj, val: setattr(self.bg_rect, 'size', val))
+
+        t_lbl = Label(
+            text=title,
+            font_size='16sp',
+            bold=True,
+            color=kivy.utils.get_color_from_hex('#EF4444'),
+            size_hint_y=None,
+            height=26
+        )
+        box.add_widget(t_lbl)
+
+        m_lbl = Label(
+            text=message,
+            font_size='13sp',
+            color=kivy.utils.get_color_from_hex('#CBD5E1'),
+            halign='center',
+            valign='middle'
+        )
+        m_lbl.bind(size=m_lbl.setter('text_size'))
+        box.add_widget(m_lbl)
+
+        btn_row = BoxLayout(spacing=10, size_hint_y=None, height=42)
+        cancel_btn = OutlineButton(text='Cancel')
+        cancel_btn.bind(on_release=self.dismiss)
+
+        def handle_confirm(*args):
+            self.dismiss()
+            if on_confirm_callback:
+                on_confirm_callback()
+
+        confirm_btn = ModernButton(
+            text='Clear All Data',
+            bg_color=kivy.utils.get_color_from_hex('#EF4444'),
+            bg_color_down=kivy.utils.get_color_from_hex('#DC2626')
+        )
+        confirm_btn.bind(on_release=handle_confirm)
+
+        btn_row.add_widget(cancel_btn)
+        btn_row.add_widget(confirm_btn)
+        box.add_widget(btn_row)
+        self.add_widget(box)
+
+
 # ==========================================
 # SCREENS IMPLEMENTATION
 # ==========================================
@@ -956,6 +1245,60 @@ class DashboardScreen(Screen):
 
     def open_pdf_modal(self):
         modal = PDFExportModal()
+        modal.open()
+
+    def open_settings_modal(self):
+        modal = SettingsModal(on_switch_callback=self.refresh_data)
+        modal.open()
+
+    def open_excel_import(self):
+        """Open native file dialog to import transactions from Excel or CSV."""
+        from kivy.utils import platform
+        if platform == 'android':
+            self.show_notice("Import XL is currently a Desktop-only feature.")
+            return
+            
+        import threading
+        def do_import():
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes('-topmost', True)
+                file_path = filedialog.askopenfilename(
+                    title="Select Excel or CSV File to Import",
+                    filetypes=[
+                        ("Excel & CSV Files", "*.xlsx;*.xls;*.csv"),
+                        ("Excel Workbook (*.xlsx)", "*.xlsx"),
+                        ("Excel 97-2003 (*.xls)", "*.xls"),
+                        ("CSV Files (*.csv)", "*.csv"),
+                        ("All Files", "*.*")
+                    ]
+                )
+                root.destroy()
+                if not file_path:
+                    return
+
+                res = database.import_transactions_from_excel(file_path)
+                from kivy.clock import Clock
+                Clock.schedule_once(lambda dt: self.on_import_completed(res, file_path))
+            except Exception as e:
+                from kivy.clock import Clock
+                Clock.schedule_once(lambda dt: self.show_notice(f"Import Error: {str(e)}"))
+
+        threading.Thread(target=do_import, daemon=True).start()
+
+    def on_import_completed(self, res, file_path):
+        self.refresh_data()
+        filename = os.path.basename(file_path)
+        if res.get("success"):
+            self.show_notice(f"Successfully imported {res.get('count', 0)} transactions from '{filename}'!")
+        else:
+            self.show_notice(res.get("message", "Import failed."))
+
+    def show_notice(self, message):
+        modal = NoticeModal(message=message)
         modal.open()
 
 
@@ -1034,6 +1377,22 @@ class HeaderScreen(Screen):
 
     def open_add_category_modal(self):
         modal = AddCategoryModal(on_success_callback=self.refresh_categories)
+        modal.open()
+
+    def confirm_clear_data(self):
+        def do_clear():
+            database.clear_all_transactions()
+            app = App.get_running_app()
+            if app and hasattr(app, 'dashboard_screen'):
+                app.dashboard_screen.refresh_data()
+            modal = NoticeModal(message="All transactions have been cleared.\nDatabase is reset for fresh entry!")
+            modal.open()
+
+        modal = ConfirmModal(
+            title="Clear All Transactions?",
+            message="This will delete all existing income & expense entries\nand reset your running balance to zero.\n\nCategory headers will be preserved.",
+            on_confirm_callback=do_clear
+        )
         modal.open()
 
 

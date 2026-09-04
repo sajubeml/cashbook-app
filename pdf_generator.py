@@ -51,7 +51,7 @@ class NumberedCanvas(canvas.Canvas):
         self.line(30, 36, 565, 36)
 
         # Footer text
-        footer_text = f"CashBook Financial Report  |  Generated on {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}"
+        footer_text = f"CashBook Financial Report  |  Generated on {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}  |  Software Developed by Saju Jacob"
         self.drawString(30, 24, footer_text)
 
         # Page numbering right-aligned
