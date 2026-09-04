@@ -39,16 +39,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade "cython<3.0" buildozer virtualenv
 
-      - name: Configure Android SDK & NDK in buildozer.spec
-        run: |
-          sudo mkdir -p $ANDROID_HOME/tools/bin
-          sudo ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager || true
-          sed -i "/^\[app\]/a android.sdk_path = $ANDROID_HOME" buildozer.spec
-          NDK_DIR=$(ls -d $ANDROID_HOME/ndk/25* 2>/dev/null | head -n 1)
-          if [ -n "$NDK_DIR" ]; then
-            sed -i "/^\[app\]/a android.ndk_path = $NDK_DIR" buildozer.spec
-            echo "Configured pre-installed NDK at $NDK_DIR"
-          fi
+
 
       - name: Pre-cache FreeType & Patch Python-for-Android
         run: |
