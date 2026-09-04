@@ -95,6 +95,9 @@ android.release_artifact = apk
 # (str) The format used to package the app for debug mode (apk)
 android.debug_artifact = apk
 
+# (str) python-for-android branch to use
+p4a.branch = master
+
 [buildozer]
 
 # (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
