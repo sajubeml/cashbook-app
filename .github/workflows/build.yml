@@ -37,11 +37,20 @@ jobs:
       - name: Install Buildozer & Cython
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade buildozer cython virtualenv
+          pip install --upgrade "cython<3.0" buildozer virtualenv
+
+      - name: Configure Android SDK & NDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          if [ -d "$ANDROID_HOME/ndk/25.2.9519653" ]; then
+            echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+            echo "Using pre-installed NDK 25.2.9519653"
+          fi
 
       - name: Compile APK with Buildozer
         run: |
-          yes | buildozer -v android debug
+          buildozer -v android debug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
