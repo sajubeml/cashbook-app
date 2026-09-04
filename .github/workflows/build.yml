@@ -39,13 +39,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install --upgrade "cython<3.0" buildozer virtualenv
 
-      - name: Configure Android SDK & NDK
+      - name: Configure Android SDK & NDK in buildozer.spec
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
-          if [ -d "$ANDROID_HOME/ndk/25.2.9519653" ]; then
-            echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
-            echo "Using pre-installed NDK 25.2.9519653"
+          echo "" >> buildozer.spec
+          echo "android.sdk_path = $ANDROID_HOME" >> buildozer.spec
+          NDK_DIR=$(ls -d $ANDROID_HOME/ndk/25* 2>/dev/null | head -n 1)
+          if [ -n "$NDK_DIR" ]; then
+            echo "android.ndk_path = $NDK_DIR" >> buildozer.spec
+            echo "Configured pre-installed NDK at $NDK_DIR"
           fi
 
       - name: Compile APK with Buildozer
