@@ -49,6 +49,17 @@ jobs:
             echo "Configured pre-installed NDK at $NDK_DIR"
           fi
 
+      - name: Pre-cache FreeType & Patch Savannah Mirror
+        run: |
+          mkdir -p .buildozer/android/platform/build-arm64-v8a/packages/freetype
+          curl -fSL "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz" \
+            -o .buildozer/android/platform/build-arm64-v8a/packages/freetype/freetype-2.14.1.tar.gz
+          
+          mkdir -p .buildozer/android/platform
+          git clone --depth 1 https://github.com/kivy/python-for-android.git .buildozer/android/platform/python-for-android
+          sed -i 's|download.savannah.gnu.org/releases/freetype|downloads.sourceforge.net/project/freetype/freetype2/{version}|g' \
+            .buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
+
       - name: Compile APK with Buildozer
         run: |
           buildozer -v android debug
