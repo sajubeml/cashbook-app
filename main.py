@@ -802,6 +802,24 @@ class PDFExportModal(ModalView):
             pdf_path = pdf_generator.generate_monthly_pdf(year_val, month_idx)
             self.status_lbl.color = kivy.utils.get_color_from_hex('#10B981')
             self.status_lbl.text = f"Saved: {os.path.basename(pdf_path)}"
+            
+            # Auto-open PDF
+            try:
+                from kivy.utils import platform
+                if platform == 'win':
+                    os.startfile(pdf_path)
+                elif platform == 'macosx':
+                    import subprocess
+                    subprocess.call(['open', pdf_path])
+                elif platform == 'linux':
+                    import subprocess
+                    subprocess.call(['xdg-open', pdf_path])
+                else:
+                    import webbrowser
+                    webbrowser.open(f"file://{pdf_path}")
+            except Exception as e:
+                print(f"Could not open PDF automatically: {e}")
+                
         except Exception as e:
             self.status_lbl.color = kivy.utils.get_color_from_hex('#EF4444')
             self.status_lbl.text = f"Error: {str(e)}"
