@@ -47,9 +47,13 @@ jobs:
           curl -fSL "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz" \
             -o /home/runner/.buildozer/cache/freetype-2.14.1.tar.gz
           
+          cd /home/runner/.buildozer/cache
+          python -m http.server 8000 &
+          cd $GITHUB_WORKSPACE
+          
           mkdir -p .buildozer/android/platform
           git clone -b master --single-branch https://github.com/kivy/python-for-android.git .buildozer/android/platform/python-for-android
-          sed -i 's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|file:///home/runner/.buildozer/cache/freetype-{version}.tar.gz|g' \
+          sed -i 's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' \
             .buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
 
       - name: Compile APK with Buildozer
