@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Android / Buildozer outputs and caches
+.buildozer/
+bin/
+*.apk
+*.aab
+
+# Local database and reports
+*.db
+cashbook.db
+reports/*.pdf
+
+# Environments
+venv/
+env/
+ENV/
+.env
+
+# Testing and IDE
+.pytest_cache/
+.vscode/
+.idea/
