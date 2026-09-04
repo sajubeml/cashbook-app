@@ -95,8 +95,8 @@ android.release_artifact = apk
 # (str) The format used to package the app for debug mode (apk)
 android.debug_artifact = apk
 
-# (str) python-for-android branch to use
-p4a.branch = master
+# (str) python-for-android local directory (if specified, will be used instead of clone)
+p4a.source_dir = .buildozer/android/platform/python-for-android
 
 [buildozer]
 

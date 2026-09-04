@@ -502,7 +502,10 @@ def import_transactions_from_excel(file_path, db_path=None):
     in_col = find_col(['cash_in', 'in', 'inflow', 'credit', 'cr', 'received', 'receipt', 'deposit', 'income'])
     out_col = find_col(['cash_out', 'out', 'outflow', 'debit', 'dr', 'paid', 'payment', 'withdrawal', 'expense'])
     mode_col = find_col(['payment_mode', 'mode', 'payment_type', 'method', 'channel'])
-    remarks_col = find_col(['remarks', 'remark', 'notes', 'narration', 'memo', 'details', 'comment'])
+    
+    # Party name and multiple remark columns
+    party_col = find_col(['party', 'party_name', 'person', 'contact'])
+    remark_cols = [c for n, c in cols_map.items() if any(x in n for x in ['remark', 'note', 'narration', 'memo', 'detail', 'comment'])]
 
     if not date_col:
         date_col = df.columns[0]
@@ -588,8 +591,8 @@ def import_transactions_from_excel(file_path, db_path=None):
             cand = str(row.get(cat_col)).strip()
             if cand:
                 category_name = cand
-        elif remarks_col and not pd.isna(row.get(remarks_col)):
-            cand = str(row.get(remarks_col)).strip()
+        elif remark_cols and not pd.isna(row.get(remark_cols[0])):
+            cand = str(row.get(remark_cols[0])).strip()
             if cand and len(cand) <= 30:
                 category_name = cand
 
@@ -609,10 +612,20 @@ def import_transactions_from_excel(file_path, db_path=None):
             if pm:
                 payment_mode = pm
 
-        # 6. Remarks
-        remarks = ""
-        if remarks_col and not pd.isna(row.get(remarks_col)):
-            remarks = str(row.get(remarks_col)).strip()
+        # 6. Remarks and Party Name
+        remarks_parts = []
+        if party_col and not pd.isna(row.get(party_col)):
+            party = str(row.get(party_col)).strip()
+            if party:
+                remarks_parts.append(f"Party: {party}")
+                
+        for rc in remark_cols:
+            if not pd.isna(row.get(rc)):
+                rm = str(row.get(rc)).strip()
+                if rm:
+                    remarks_parts.append(rm)
+                    
+        remarks = " | ".join(remarks_parts)
 
         # Insert Transaction
         cursor.execute("""
