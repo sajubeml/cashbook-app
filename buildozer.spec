@@ -96,7 +96,7 @@ android.release_artifact = apk
 android.debug_artifact = apk
 
 # (str) python-for-android local directory (if specified, will be used instead of clone)
-p4a.source_dir = .buildozer/android/platform/python-for-android
+# p4a.source_dir = .buildozer/android/platform/python-for-android
 
 [buildozer]
 
