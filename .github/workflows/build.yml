@@ -22,62 +22,83 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
       - name: Install System Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            git zip unzip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake \
             libffi-dev libssl-dev libjpeg-dev libpng-dev ccache \
-            build-essential python3 python3-pip python3-dev \
-            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+            build-essential python3-dev \
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+            curl wget
 
-      - name: Install Buildozer
+      - name: Install Buildozer and Dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          pip3 install --user --upgrade buildozer "cython<3.0" virtualenv
+          python -m pip install --upgrade pip setuptools wheel
+          pip install "cython<3.0" virtualenv
+          pip install buildozer
 
-      - name: Patch FreeType Download URL
+      - name: Pre-download FreeType (bypass Savannah downtime)
         run: |
-          # Savannah is frequently down (502/504 errors). We will download FreeType using curl.
           mkdir -p ~/.buildozer/cache
-          curl -fSL "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz" -o ~/.buildozer/cache/freetype-2.14.1.tar.gz
-          cd ~/.buildozer/cache
-          python3 -m http.server 8000 &
-          cd $GITHUB_WORKSPACE
-          
-          # Clone python-for-android manually to patch it
+          FREETYPE_VERSION="2.13.2"
+          FREETYPE_FILE="freetype-${FREETYPE_VERSION}.tar.gz"
+          MIRRORS=(
+            "https://downloads.sourceforge.net/project/freetype/freetype2/${FREETYPE_VERSION}/${FREETYPE_FILE}"
+            "https://github.com/freetype/freetype/archive/refs/tags/VER-${FREETYPE_VERSION//./-}.tar.gz"
+            "https://mirror.freedif.org/GNU/freetype/${FREETYPE_FILE}"
+          )
+          for URL in "${MIRRORS[@]}"; do
+            echo "Trying: $URL"
+            if curl -fsSL --retry 3 --retry-delay 5 -o ~/.buildozer/cache/${FREETYPE_FILE} "$URL"; then
+              echo "Downloaded FreeType from $URL"
+              break
+            fi
+          done
+          ls -lh ~/.buildozer/cache/ || echo "Cache empty"
+
+      - name: Clone and Configure python-for-android
+        run: |
           mkdir -p .buildozer/android/platform
-          git clone -b master --single-branch https://github.com/kivy/python-for-android.git .buildozer/android/platform/python-for-android
-          
-          # Patch the freetype recipe to use our local server
-          sed -i 's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' .buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
-          sed -i 's|https://download.nongnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' .buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
-          
-          # Monkey-patch python-for-android to use a browser User-Agent to bypass 403 Forbidden blocks on downloads
-          cat << 'EOF' > patch_ua.py
-          import urllib.request
-          urllib.request.FancyURLopener.version = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-          urllib.request.URLopener.version = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-          opener = urllib.request.build_opener()
-          opener.addheaders = [('User-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')]
-          urllib.request.install_opener(opener)
-          EOF
-          cat patch_ua.py .buildozer/android/platform/python-for-android/pythonforandroid/__init__.py > temp.py
-          mv temp.py .buildozer/android/platform/python-for-android/pythonforandroid/__init__.py
+          git clone --depth=1 -b master \
+            https://github.com/kivy/python-for-android.git \
+            .buildozer/android/platform/python-for-android
+
+          P4A_DIR=".buildozer/android/platform/python-for-android"
+
+          FREETYPE_RECIPE="${P4A_DIR}/pythonforandroid/recipes/freetype/__init__.py"
+          if [ -f "$FREETYPE_RECIPE" ]; then
+            sed -i \
+              's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|https://downloads.sourceforge.net/project/freetype/freetype2/{version}/freetype-{version}.tar.gz|g' \
+              "$FREETYPE_RECIPE"
+            sed -i \
+              's|https://download.nongnu.org/releases/freetype/freetype-{version}.tar.gz|https://downloads.sourceforge.net/project/freetype/freetype2/{version}/freetype-{version}.tar.gz|g' \
+              "$FREETYPE_RECIPE"
+            echo "FreeType recipe patched:"
+            grep -n "url" "$FREETYPE_RECIPE" | head -5
+          fi
 
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
-            .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+            ~/.android
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}-v2
+          restore-keys: |
+            buildozer-${{ runner.os }}-
 
       - name: Compile APK with Buildozer
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ~/.local/bin/buildozer android debug 2>&1 | tee buildozer_full.log
+          ~/.local/bin/buildozer android debug 2>&1 | tee buildozer_full.log || \
+          buildozer android debug 2>&1 | tee buildozer_full.log
+        timeout-minutes: 45
 
       - name: Upload Error Log on Failure
         uses: actions/upload-artifact@v4
@@ -89,8 +110,8 @@ jobs:
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
-        if: always()
+        if: success()
         with:
           name: CashBook-Android-APK
           path: bin/*.apk
-          if-no-files-found: warn
+          if-no-files-found: error
