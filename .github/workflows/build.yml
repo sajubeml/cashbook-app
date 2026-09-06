@@ -34,7 +34,7 @@ jobs:
       - name: Install Buildozer
         run: |
           python3 -m pip install --upgrade pip
-          pip3 install --user --upgrade buildozer cython virtualenv
+          pip3 install --user --upgrade buildozer "cython<3.0" virtualenv
 
       - name: Patch FreeType Download URL
         run: |
