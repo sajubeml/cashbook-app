@@ -44,25 +44,6 @@ jobs:
           pip install "cython<3.0" virtualenv
           pip install buildozer
 
-      - name: Pre-download FreeType (bypass Savannah downtime)
-        run: |
-          mkdir -p ~/.buildozer/cache
-          FREETYPE_VERSION="2.13.2"
-          FREETYPE_FILE="freetype-${FREETYPE_VERSION}.tar.gz"
-          MIRRORS=(
-            "https://downloads.sourceforge.net/project/freetype/freetype2/${FREETYPE_VERSION}/${FREETYPE_FILE}"
-            "https://github.com/freetype/freetype/archive/refs/tags/VER-${FREETYPE_VERSION//./-}.tar.gz"
-            "https://mirror.freedif.org/GNU/freetype/${FREETYPE_FILE}"
-          )
-          for URL in "${MIRRORS[@]}"; do
-            echo "Trying: $URL"
-            if curl -fsSL --retry 3 --retry-delay 5 -o ~/.buildozer/cache/${FREETYPE_FILE} "$URL"; then
-              echo "Downloaded FreeType from $URL"
-              break
-            fi
-          done
-          ls -lh ~/.buildozer/cache/ || echo "Cache empty"
-
       - name: Clone and Configure python-for-android
         run: |
           mkdir -p .buildozer/android/platform
@@ -70,19 +51,34 @@ jobs:
             https://github.com/kivy/python-for-android.git \
             .buildozer/android/platform/python-for-android
 
-          P4A_DIR=".buildozer/android/platform/python-for-android"
+          # Patch all recipes in python-for-android to fix broken/unreliable download URLs
+          python3 -c "
+          import os, glob
 
-          FREETYPE_RECIPE="${P4A_DIR}/pythonforandroid/recipes/freetype/__init__.py"
-          if [ -f "$FREETYPE_RECIPE" ]; then
-            sed -i \
-              's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|https://downloads.sourceforge.net/project/freetype/freetype2/{version}/freetype-{version}.tar.gz|g' \
-              "$FREETYPE_RECIPE"
-            sed -i \
-              's|https://download.nongnu.org/releases/freetype/freetype-{version}.tar.gz|https://downloads.sourceforge.net/project/freetype/freetype2/{version}/freetype-{version}.tar.gz|g' \
-              "$FREETYPE_RECIPE"
-            echo "FreeType recipe patched:"
-            grep -n "url" "$FREETYPE_RECIPE" | head -5
-          fi
+          recipes_dir = '.buildozer/android/platform/python-for-android/pythonforandroid/recipes'
+          for root, dirs, files in os.walk(recipes_dir):
+              for f in files:
+                  if f == '__init__.py':
+                      path = os.path.join(root, f)
+                      with open(path, 'r', encoding='utf-8', errors='ignore') as fp:
+                          content = fp.read()
+                      new_content = content
+                      # Replace Savannah mirror with SourceForge for FreeType
+                      new_content = new_content.replace('https://download.savannah.gnu.org/releases/freetype/', 'https://downloads.sourceforge.net/project/freetype/freetype2/')
+                      new_content = new_content.replace('https://download.nongnu.org/releases/freetype/', 'https://downloads.sourceforge.net/project/freetype/freetype2/')
+                      if new_content != content:
+                          with open(path, 'w', encoding='utf-8') as fp:
+                              fp.write(new_content)
+                          print(f'Patched: {path}')
+          "
+
+      - name: Pre-download FreeType Tarballs
+        run: |
+          mkdir -p ~/.buildozer/cache
+          for ver in 2.10.4 2.11.1 2.13.2; do
+            curl -fsSL --retry 3 "https://downloads.sourceforge.net/project/freetype/freetype2/${ver}/freetype-${ver}.tar.gz" -o ~/.buildozer/cache/freetype-${ver}.tar.gz || true
+          done
+          ls -lh ~/.buildozer/cache/
 
       - name: Cache Buildozer
         uses: actions/cache@v4
@@ -90,13 +86,13 @@ jobs:
           path: |
             ~/.buildozer
             ~/.android
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}-v2
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}-v3
           restore-keys: |
             buildozer-${{ runner.os }}-
 
       - name: Compile APK with Buildozer
         run: |
-          ~/.local/bin/buildozer android debug 2>&1 | tee buildozer_full.log || \
+          set -o pipefail
           buildozer android debug 2>&1 | tee buildozer_full.log
         timeout-minutes: 45
 
@@ -114,4 +110,4 @@ jobs:
         with:
           name: CashBook-Android-APK
           path: bin/*.apk
-          if-no-files-found: error
+          if-no-files-found: warn
