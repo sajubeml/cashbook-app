@@ -52,6 +52,18 @@ jobs:
           # Patch the freetype recipe to use our local server
           sed -i 's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' .buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
           sed -i 's|https://download.nongnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' .buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
+          
+          # Monkey-patch python-for-android to use a browser User-Agent to bypass 403 Forbidden blocks on downloads
+          cat << 'EOF' > patch_ua.py
+          import urllib.request
+          urllib.request.FancyURLopener.version = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+          urllib.request.URLopener.version = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+          opener = urllib.request.build_opener()
+          opener.addheaders = [('User-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')]
+          urllib.request.install_opener(opener)
+          EOF
+          cat patch_ua.py .buildozer/android/platform/python-for-android/pythonforandroid/__init__.py > temp.py
+          mv temp.py .buildozer/android/platform/python-for-android/pythonforandroid/__init__.py
 
       - name: Cache Buildozer
         uses: actions/cache@v4
