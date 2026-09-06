@@ -10,55 +10,24 @@ on:
 jobs:
   build:
     name: Build CashBook APK
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v4
         with:
-          python-version: '3.11'
+          path: .buildozer_global
+          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - name: Build with Buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
         with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake \
-            libffi-dev libssl-dev libjpeg-dev libpng-dev ccache
-
-      - name: Install Buildozer & Cython
-        run: |
-          python -m pip install --upgrade pip
-          pip install --upgrade "cython<3.0" buildozer virtualenv
-
-
-
-      - name: Pre-cache FreeType & Patch Python-for-Android
-        run: |
-          mkdir -p /home/runner/.buildozer/cache
-          curl -fSL "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz" \
-            -o /home/runner/.buildozer/cache/freetype-2.14.1.tar.gz
-          
-          cd /home/runner/.buildozer/cache
-          python -m http.server 8000 &
-          cd $GITHUB_WORKSPACE
-          
-          mkdir -p .buildozer/android/platform
-          git clone -b master --single-branch https://github.com/kivy/python-for-android.git .buildozer/android/platform/python-for-android
-          sed -i 's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' \
-            .buildozer/android/platform/python-for-android/pythonforandroid/recipes/freetype/__init__.py
-
-      - name: Compile APK with Buildozer
-        run: |
-          buildozer -v android debug
+          command: buildozer android debug
+          buildozer_version: master
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
