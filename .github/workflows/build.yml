@@ -36,6 +36,19 @@ jobs:
           python3 -m pip install --upgrade pip
           pip3 install --user --upgrade buildozer cython virtualenv
 
+      - name: Patch FreeType Download URL
+        run: |
+          # Savannah is frequently down (502/504 errors). We will download FreeType using wget and serve it locally.
+          mkdir -p ~/.buildozer/cache
+          wget -U "Mozilla/5.0" "https://downloads.sourceforge.net/project/freetype/freetype2/2.14.1/freetype-2.14.1.tar.gz" -O ~/.buildozer/cache/freetype-2.14.1.tar.gz
+          cd ~/.buildozer/cache
+          python3 -m http.server 8000 &
+          
+          # Find python-for-android and patch the freetype recipe to use our local server
+          P4A_DIR=$(python3 -c "import pythonforandroid; import os; print(os.path.dirname(pythonforandroid.__file__))")
+          sed -i 's|https://download.savannah.gnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' $P4A_DIR/recipes/freetype/__init__.py
+          sed -i 's|https://download.nongnu.org/releases/freetype/freetype-{version}.tar.gz|http://localhost:8000/freetype-{version}.tar.gz|g' $P4A_DIR/recipes/freetype/__init__.py
+
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
